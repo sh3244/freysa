@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		228600A32E1475840077CA39 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 228600A22E1475840077CA39 /* README.md */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		22BFDBAD2E12F47100FBB7AF /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -24,6 +28,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		228600A22E1475840077CA39 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		22BFDB9C2E12F46900FBB7AF /* Freysa.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Freysa.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		22BFDBAC2E12F47100FBB7AF /* FreysaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FreysaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		22BFDBB62E12F47100FBB7AF /* FreysaUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FreysaUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -79,6 +84,7 @@
 				22BFDBAF2E12F47100FBB7AF /* FreysaTests */,
 				22BFDBB92E12F47100FBB7AF /* FreysaUITests */,
 				22BFDB9D2E12F46900FBB7AF /* Products */,
+				228600A22E1475840077CA39 /* README.md */,
 			);
 			sourceTree = "<group>";
 		};
@@ -212,6 +218,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				228600A32E1475840077CA39 /* README.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
