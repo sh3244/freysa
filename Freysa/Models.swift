@@ -40,6 +40,7 @@ struct VideoAsset: Identifiable {
     let thumbnailUrl: URL?
     let videoUrl: URL?
     let createdAt: Date
+    var status: String? // e.g. "processing", "ready", etc.
 
     init?(json: [String: Any]) {
         guard
@@ -63,6 +64,8 @@ struct VideoAsset: Identifiable {
         } else {
             videoUrl = nil
         }
+
+        self.status = json["status"] as? String
     }
 }
 

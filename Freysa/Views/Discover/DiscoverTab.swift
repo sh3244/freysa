@@ -9,10 +9,10 @@ import AVKit
 import AVFoundation
 
 struct DiscoverTab: View {
-    @State private var videos: [VideoAsset] = []
-    @State private var loading = false
-    @State private var errorMessage: String?
-    @State private var currentIndex = 0
+    @State var videos: [VideoAsset] = []
+    @State var loading = false
+    @State var errorMessage: String?
+    @State var currentIndex = 0
 
     var body: some View {
         NavigationView {
@@ -20,19 +20,76 @@ struct DiscoverTab: View {
                 if loading {
                     ProgressView("Loading…")
                 } else if let err = errorMessage {
-                    Text(err).foregroundColor(.red)
+                    Text(err)
+                        .foregroundColor(.red)
+                        .padding()
+                        .background(Color.black.opacity(0.8))
+                        .cornerRadius(12)
+                } else if videos.isEmpty {
+                    VStack(spacing: 16) {
+                        Image(systemName: "film")
+                            .font(.system(size: 48))
+                            .foregroundColor(.white.opacity(0.7))
+                        Text("No videos to discover yet.")
+                            .foregroundColor(.white)
+                            .font(.title3)
+                            .bold()
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.black.ignoresSafeArea())
                 } else {
                     GeometryReader { geo in
                         ScrollViewReader { proxy in
                             ScrollView(.vertical, showsIndicators: false) {
                                 VStack(spacing: 0) {
                                     ForEach(videos.indices, id: \.self) { idx in
-                                        AutoPlayVideoView(
-                                            url: videos[idx].videoUrl,
-                                            isActive: currentIndex == idx
-                                        )
-                                        .frame(width: geo.size.width, height: geo.size.height)
-                                        .id(idx)
+                                        ZStack {
+                                            AutoPlayVideoView(
+                                                url: videos[idx].videoUrl,
+                                                isActive: currentIndex == idx
+                                            )
+                                            .frame(width: geo.size.width, height: geo.size.height)
+                                            .id(idx)
+
+                                            VStack {
+                                                Spacer()
+                                                HStack {
+                                                    Spacer()
+                                                    VStack(spacing: 16) {
+                                                        Button(action: {
+                                                            print("👎 Disliked video at index \(idx)")
+                                                            Task {
+                                                                try? await MainAdapter.rateAsset(assetId: videos[idx].id, decision: "DISLIKE")
+                                                            }
+                                                        }) {
+                                                            Image(systemName: "hand.thumbsdown.fill")
+                                                                .font(.system(size: 22))
+                                                                .foregroundColor(.white)
+                                                                .padding(10)
+                                                                .background(Color.black.opacity(0.7))
+                                                                .clipShape(Circle())
+                                                        }
+
+                                                        Button(action: {
+                                                            print("👍 Liked video at index \(idx)")
+                                                            Task {
+                                                                try? await MainAdapter.rateAsset(assetId: videos[idx].id, decision: "LIKE")
+                                                            }
+                                                        }) {
+                                                            Image(systemName: "hand.thumbsup.fill")
+                                                                .font(.system(size: 22))
+                                                                .foregroundColor(.white)
+                                                                .padding(10)
+                                                                .background(Color.black.opacity(0.7))
+                                                                .clipShape(Circle())
+                                                        }
+                                                    }
+                                                    .padding(.trailing, 24)
+                                                    .padding(.bottom, 120) // Move buttons further down
+                                                }
+                                            }
+                                            .frame(width: geo.size.width, height: geo.size.height)
+                                        }
                                     }
                                 }
                                 .background(
@@ -76,38 +133,40 @@ struct DiscoverTab: View {
         }
     }
 }
-
 struct AutoPlayVideoView: View {
     let url: URL?
     let isActive: Bool
-    @State private var player = AVPlayer()
+
+    @State private var player: AVQueuePlayer?
+    @State private var looper: AVPlayerLooper?
 
     var body: some View {
         VideoPlayer(player: player)
             .onAppear {
                 configureAudioSession()
-                if let u = url {
-                    player.replaceCurrentItem(with: AVPlayerItem(url: u))
-                }
-                // Only autoplay if active upon appearing
+                guard let url = url else { return }
+                let item = AVPlayerItem(url: url)
+                let queue = AVQueuePlayer()
+                let loop = AVPlayerLooper(player: queue, templateItem: item)
+                self.player = queue
+                self.looper = loop
                 if isActive {
-                    player.play()
-                    print("▶️ Autoplay started for URL: \(url?.absoluteString ?? "unknown")")
+                    queue.play()
                 }
             }
-            .onChange(of: isActive, initial: true) { _, active in
+            .onChange(of: isActive, initial: false) { _, active in
+                guard let queue = player else { return }
                 if active {
-                    player.seek(to: .zero)
-                    player.play()
-                    print("▶️ Video playing: \(url?.absoluteString ?? "unknown")")
+                    queue.play()
                 } else {
-                    player.pause()
-                    print("⏸ Video paused: \(url?.absoluteString ?? "unknown")")
+                    queue.pause()
                 }
             }
             .onDisappear {
-                player.pause()
-                player.replaceCurrentItem(with: nil)
+                player?.pause()
+                // deinit looper to stop looping
+                looper = nil
+                player = nil
             }
     }
 

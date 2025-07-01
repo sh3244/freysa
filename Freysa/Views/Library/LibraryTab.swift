@@ -20,6 +20,16 @@ struct LibraryTab: View {
                     ProgressView("Loading…")
                 } else if let err = errorMessage {
                     Text(err).foregroundColor(.red)
+                } else if assets.isEmpty {
+                    VStack(spacing: 16) {
+                        Image(systemName: "books.vertical.fill")
+                            .font(.system(size: 64))
+                            .foregroundColor(.gray.opacity(0.5))
+                        Text("No assets yet!")
+                            .foregroundColor(.gray)
+                            .font(.headline)
+                    }
+                    
                 } else {
                     List(assets) { asset in
                         HStack {

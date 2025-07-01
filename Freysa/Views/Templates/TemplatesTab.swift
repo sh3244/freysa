@@ -14,24 +14,34 @@ struct TemplatesTab: View {
     @State var loading = false
     @State var errorMessage: String?
     @State var selectedTemplate: Template?
-    @State var showPrompt = false
-    @State var promptText = ""
 
     var body: some View {
         NavigationView {
             Group {
                 if loading {
                     ProgressView("Loading…")
+                        .progressViewStyle(CircularProgressViewStyle(tint: .gray))
                 } else if let err = errorMessage {
-                    Text(err).foregroundColor(.red)
+                    Text(err)
+                        .foregroundColor(.red)
+                        .multilineTextAlignment(.center)
+                        .padding()
+                } else if templates.isEmpty {
+                    VStack(spacing: 16) {
+                        Image(systemName: "square.grid.2x2")
+                            .font(.system(size: 48))
+                            .foregroundColor(.gray.opacity(0.5))
+                        Text("No templates available")
+                            .foregroundColor(.secondary)
+                            .font(.title3)
+                    }
+                    .padding()
                 } else {
                     ScrollView {
                         LazyVGrid(columns: [GridItem(), GridItem()], spacing: 12) {
                             ForEach(templates) { tpl in
                                 TemplateCell(template: tpl) {
                                     selectedTemplate = tpl
-                                    promptText = ""
-                                    showPrompt = true
                                 }
                             }
                         }
@@ -41,19 +51,17 @@ struct TemplatesTab: View {
             }
             .navigationTitle("Templates")
         }
+        .accentColor(.gray)
         .task { await loadTemplates() }
-        .sheet(isPresented: $showPrompt) {
-            if let tpl = selectedTemplate {
-                TemplatePromptView(
-                    template: tpl,
-                    promptText: $promptText,
-                    isPresented: $showPrompt)
-            }
+        .sheet(item: $selectedTemplate) { tpl in
+            TemplatePromptView(template: tpl)
+                .accentColor(.gray)
         }
     }
 
     func loadTemplates() async {
-        loading = true; errorMessage = nil
+        loading = true
+        errorMessage = nil
         do {
             templates = try await MainAdapter.getCreationTemplates()
         } catch {
@@ -62,6 +70,9 @@ struct TemplatesTab: View {
         loading = false
     }
 }
+
+// MARK: – Grid Cell with Ken Burns Effect
+
 struct TemplateCell: View {
     let template: Template
     let action: () -> Void
@@ -69,111 +80,198 @@ struct TemplateCell: View {
     let cellWidth: CGFloat = (UIScreen.main.bounds.width - 48) / 2
     let cellHeight: CGFloat = (UIScreen.main.bounds.width - 48) / 2 * 1.614
 
+    @State var animatedScale: CGFloat = 1.0
+    @State var animatedOffset: CGSize = .zero
+
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
+        ZStack(alignment: .bottom) {
             AsyncImage(url: template.thumbnailUrl) { img in
                 img
                     .resizable()
                     .scaledToFill()
                     .frame(width: cellWidth, height: cellHeight)
                     .clipped()
+                // apply Ken Burns effect
+                    .scaleEffect(animatedScale)
+                    .offset(animatedOffset)
+                    .onAppear {
+                        // random target values
+                        let maxZoom: CGFloat = 0.3
+                        let targetScale = 1 + .random(in: 0...maxZoom)
+                        // After scaling, the image is larger: compute overshoot
+                        let overshootWidth = cellWidth * targetScale - cellWidth
+                        let overshootHeight = cellHeight * targetScale - cellHeight
+                        // Half overshoot is max safe offset
+                        let maxXOffset = overshootWidth / 2
+                        let maxYOffset = overshootHeight / 2
+                        // Random offset within safe range
+                        let targetOffset = CGSize(
+                            width: .random(in: -maxXOffset...maxXOffset),
+                            height: .random(in: -maxYOffset...maxYOffset)
+                        )
+                        let duration = Double.random(in: 5...10)
+                        withAnimation(
+                            Animation.easeInOut(duration: duration)
+                                .repeatForever(autoreverses: true)
+                        ) {
+                            animatedScale = targetScale
+                            animatedOffset = targetOffset
+                        }
+                    }
             } placeholder: {
                 Color.gray.opacity(0.3)
                     .frame(width: cellWidth, height: cellHeight)
             }
 
-            // Gradient overlay for text fade
             LinearGradient(
                 gradient: Gradient(stops: [
-                    .init(color: Color.black.opacity(0.7), location: 0.0),
-                    .init(color: Color.black.opacity(0.0), location: 0.8)
+                    .init(color: .white.opacity(0.7), location: 0),
+                    .init(color: .white.opacity(0),   location: 0.8)
                 ]),
                 startPoint: .bottom,
                 endPoint: .top
             )
-            .frame(height: 40)
-            .frame(width: cellWidth)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .alignmentGuide(.bottom) { d in d[.bottom] }
+            .frame(width: cellWidth, height: 40)
 
-            // Title text near bottom
-            HStack {
-                Spacer()
-                Text(template.title)
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .shadow(color: .black.opacity(0.7), radius: 4, x: 0, y: 2)
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 12)
-                Spacer()
-            }
+            Text(template.title)
+                .font(.title3.bold())
+                .foregroundColor(.white)
+                .shadow(radius: 4)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 8)
         }
         .frame(width: cellWidth, height: cellHeight)
-        .background(Color(.systemBackground))
+        .background(Color(.systemGray6))
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .padding(0)
         .onTapGesture(perform: action)
     }
 }
 
+// MARK: – Prompt & Generation
+
 struct TemplatePromptView: View {
     let template: Template
-    @Binding var promptText: String
-    @Binding var isPresented: Bool
+    @Environment(\.dismiss) var dismiss
+
+    @State var promptText: String = ""
     @State var isProcessing = false
-    @State var asset: VideoAsset?
+    @State var isPublic: Bool = false
 
     var body: some View {
-        Form {
-            Section(header: Text("Template")) {
-                Text(template.title)
-            }
-            Section(header: Text("Prompt")) {
-                TextField("Enter prompt", text: $promptText)
-            }
-        }
-        .navigationTitle("Generate Video")
-        .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Generate") {
-                    Task { await generate() }
+        NavigationView {
+            VStack(spacing: 20) {
+                // Template preview
+                ZStack(alignment: .bottom) {
+                    AsyncImage(url: template.thumbnailUrl) { img in
+                        img
+                            .resizable()
+                            .scaledToFill()
+                            .frame(height: 200)
+                            .clipped()
+                    } placeholder: {
+                        Color.gray.opacity(0.3)
+                            .frame(height: 200)
+                    }
+
+                    LinearGradient(
+                        gradient: Gradient(stops: [
+                            .init(color: .black.opacity(0.7), location: 0),
+                            .init(color: .black.opacity(0),   location: 0.8)
+                        ]),
+                        startPoint: .bottom,
+                        endPoint: .top
+                    )
+                    .frame(height: 60)
+
+                    Text(template.title)
+                        .font(.title2.bold())
+                        .foregroundColor(.white)
+                        .shadow(radius: 4)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 8)
                 }
-                .disabled(isProcessing)
+                .cornerRadius(12)
+
+                // Custom prompt field
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Prompt")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+
+                    TextField("Enter prompt", text: $promptText)
+                        .font(.title3)
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .foregroundColor(.primary)
+                        .cornerRadius(8)
+                }
+
+                Toggle(isOn: $isPublic) {
+                    Text("Public")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                }
+                .toggleStyle(SwitchToggleStyle(tint: .accentColor))
+
+                Spacer()
+
+                // Credits 100 flat credits cost
+                Text("Cost in Credits: 100, Balance: \(999)")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+
+                Button(action: { Task { await generate() } }) {
+                    Text(isProcessing ? "Generating…" : "Generate Video")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(isProcessing ? Color.gray : Color.accentColor)
+                        .foregroundColor(.white)
+                        .cornerRadius(8)
+                }
+                .disabled(isProcessing || promptText.isEmpty)
             }
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") { isPresented = false }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding()
+            .background(Color(.systemBackground))
+            .navigationTitle("Generate Video")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                    .tint(.accentColor)
+                }
             }
         }
-        .overlay(alignment: .center) {
-            if isProcessing {
-                ProgressView()
-                    .padding()
-                    .background(Color(.systemBackground).opacity(0.8))
-                    .cornerRadius(8)
-            }
-        }
+        .accentColor(.accentColor)
     }
 
     func generate() async {
         isProcessing = true
         do {
-            let id = try await MainAdapter.generateAsset(templateId: template.id, prompt: promptText)
+            let assetId = try await MainAdapter.generateAsset(
+                templateId: template.id,
+                prompt: promptText
+            )
             while true {
-                let assets = try await MainAdapter.getLibraryAssets()
-                if let found = assets.first(where: { $0.id == id }) {
-                    asset = found; break
+                if let asset = try await MainAdapter.getAssetById(assetId: assetId),
+                   asset.status == "ready" {
+                    break
                 }
                 try await Task.sleep(nanoseconds: 2 * 1_000_000_000)
             }
-        } catch {}
+            dismiss()
+        } catch {
+            print("Generation error:", error.localizedDescription)
+            dismiss()
+        }
         isProcessing = false
     }
 }
 
-
-
-// MARK: – Previews
+// MARK: – Preview
 
 #Preview {
     TemplatesTab()
