@@ -139,35 +139,72 @@ struct AutoPlayVideoView: View {
 
     @State private var player: AVQueuePlayer?
     @State private var looper: AVPlayerLooper?
+    @State private var isLoading = false
 
     var body: some View {
-        VideoPlayer(player: player)
-            .onAppear {
-                configureAudioSession()
-                guard let url = url else { return }
-                let item = AVPlayerItem(url: url)
-                let queue = AVQueuePlayer()
-                let loop = AVPlayerLooper(player: queue, templateItem: item)
-                self.player = queue
-                self.looper = loop
-                if isActive {
-                    queue.play()
+        ZStack(alignment: .topLeading) {
+            VideoPlayer(player: player)
+                .onAppear {
+                    configureAudioSession()
+                    guard let url = url else { return }
+                    loadVideo(url: url)
                 }
-            }
-            .onChange(of: isActive, initial: false) { _, active in
-                guard let queue = player else { return }
-                if active {
-                    queue.play()
-                } else {
-                    queue.pause()
+                .onChange(of: isActive, initial: false) { _, active in
+                    guard let queue = player else { return }
+                    if active {
+                        queue.play()
+                    } else {
+                        queue.pause()
+                    }
                 }
+                .onDisappear {
+                    player?.pause()
+                    looper = nil
+                    player = nil
+                }
+        }
+    }
+
+    private func loadVideo(url: URL) {
+        guard !isLoading else { return }
+        isLoading = true
+
+        Task {
+            // Try disk cache first
+            if let data = await DiskCache.shared.get(url: url) {
+                let tempUrl = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mp4")
+                try? data.write(to: tempUrl)
+                await MainActor.run {
+                    setupPlayer(with: tempUrl)
+                }
+                // print("Cache hit for \(url)")
+                return
             }
-            .onDisappear {
-                player?.pause()
-                // deinit looper to stop looping
-                looper = nil
-                player = nil
+
+            // Download if not cached
+            do {
+                let (data, _) = try await URLSession.shared.data(from: url)
+                let tempUrl = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mp4")
+                try? data.write(to: tempUrl)
+                await DiskCache.shared.set(url: url, data: data)
+                await MainActor.run {
+                    setupPlayer(with: tempUrl)
+                }
+            } catch {
+                // Ignore error
             }
+        }
+    }
+
+    private func setupPlayer(with url: URL) {
+        let item = AVPlayerItem(url: url)
+        let queue = AVQueuePlayer()
+        let loop = AVPlayerLooper(player: queue, templateItem: item)
+        self.player = queue
+        self.looper = loop
+        if isActive {
+            queue.play()
+        }
     }
 
     private func configureAudioSession() {

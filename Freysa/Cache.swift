@@ -8,23 +8,6 @@
 import Foundation
 import UIKit
 
-// MARK: - In-memory LRU Cache
-
-final actor Cache {
-    static let shared = Cache()
-    let cache = NSCache<NSString, NSData>()
-
-    init() {}
-
-    func get(url: URL) -> Data? {
-        return cache.object(forKey: url.absoluteString as NSString) as Data?
-    }
-
-    func set(url: URL, data: Data) {
-        cache.setObject(data as NSData, forKey: url.absoluteString as NSString)
-    }
-}
-
 // MARK: - Disk Cache
 
 final actor DiskCache {

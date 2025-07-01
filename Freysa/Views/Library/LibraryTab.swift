@@ -29,11 +29,11 @@ struct LibraryTab: View {
                             .foregroundColor(.gray)
                             .font(.headline)
                     }
-                    
+
                 } else {
                     List(assets) { asset in
                         HStack {
-                            AsyncImage(url: asset.thumbnailUrl) { img in
+                            CachedAsyncImage(url: asset.thumbnailUrl) { img in
                                 img.resizable().scaledToFill()
                             } placeholder: {
                                 Color.gray.opacity(0.3)
