@@ -13,11 +13,11 @@ actor API {
     static let shared = API()
 
     // Example of future state: auth token (safe within actor)
-    private var authToken: String?
+    var authToken: String? = "testing"
 
     // MARK: - Generic HTTP Request Method
 
-    private func request(
+    func request(
         endpoint: String,
         method: String,
         body: [String: Any]? = nil

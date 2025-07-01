@@ -12,9 +12,9 @@ import UIKit
 
 final actor Cache {
     static let shared = Cache()
-    private let cache = NSCache<NSString, NSData>()
+    let cache = NSCache<NSString, NSData>()
 
-    private init() {}
+    init() {}
 
     func get(url: URL) -> Data? {
         return cache.object(forKey: url.absoluteString as NSString) as Data?
@@ -29,10 +29,10 @@ final actor Cache {
 
 final actor DiskCache {
     static let shared = DiskCache()
-    private let fileManager = FileManager.default
-    private let cacheDirectory: URL
+    let fileManager = FileManager.default
+    let cacheDirectory: URL
 
-    private init() {
+    init() {
         let urls = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)
         cacheDirectory = urls[0].appendingPathComponent("DiskCache")
 
@@ -55,7 +55,7 @@ final actor DiskCache {
     }
 
     /// Helper: generate a safe file name from URL
-    private func safeFileName(from url: URL) -> String {
+    func safeFileName(from url: URL) -> String {
         let hashed = url.absoluteString.data(using: .utf8)?.base64EncodedString() ?? UUID().uuidString
         return hashed
     }
