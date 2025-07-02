@@ -7,26 +7,52 @@
 
 import SwiftUI
 
+@MainActor
+final class TemplatesListViewModel: ObservableObject {
+    @Published var templates: [Template] = []
+    @Published var isLoading = false
+    @Published var errorMessage: String?
+
+    init() {
+        Task { await loadTemplates() }
+    }
+
+    func loadTemplates() async {
+//        isLoading = true
+//        defer { isLoading = false }
+
+        do {
+            templates = try await MainAdapter.getCreationTemplates()
+            // shuffle templates
+            templates.shuffle()
+            print("Loaded \(templates.count) templates")
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
+
 // MARK: – Templates Screen
 
 struct TemplatesTab: View {
-    @State var templates: [Template] = []
-    @State var loading = false
-    @State var errorMessage: String?
-    @State var selectedTemplate: Template?
+    @StateObject private var vm = TemplatesListViewModel()
+    @State private var selected: Template?
+
 
     var body: some View {
         NavigationView {
             Group {
-                if loading {
+                if vm.isLoading {
                     ProgressView("Loading…")
                         .progressViewStyle(CircularProgressViewStyle(tint: .gray))
-                } else if let err = errorMessage {
+                } else if let err = vm.errorMessage {
                     Text(err)
                         .foregroundColor(.red)
                         .multilineTextAlignment(.center)
                         .padding()
-                } else if templates.isEmpty {
+                } else if vm.templates.isEmpty {
                     VStack(spacing: 16) {
                         Image(systemName: "square.grid.2x2")
                             .font(.system(size: 48))
@@ -39,37 +65,87 @@ struct TemplatesTab: View {
                 } else {
                     ScrollView {
                         LazyVGrid(columns: [GridItem(), GridItem()], spacing: 12) {
-                            ForEach(templates) { tpl in
+                            ForEach(vm.templates) { tpl in
                                 TemplateCell(template: tpl) {
-                                    selectedTemplate = tpl
+                                    selected = tpl
                                 }
                             }
                         }
                         .padding()
+                    }.refreshable {
+                        await vm.loadTemplates()
                     }
                 }
             }
             .navigationTitle("Templates")
         }
         .accentColor(.gray)
-        .task { await loadTemplates() }
-        .sheet(item: $selectedTemplate) { tpl in
+        .sheet(item: $selected) { tpl in
             TemplatePromptView(template: tpl)
                 .accentColor(.gray)
         }
     }
+}
 
-    func loadTemplates() async {
-        loading = true
-        errorMessage = nil
-        do {
-            templates = try await MainAdapter.getCreationTemplates()
-        } catch {
-            errorMessage = error.localizedDescription
+struct AnimatedImageView: View {
+    let url: URL?
+    let width: CGFloat
+    let height: CGFloat
+
+    @State private var scale: CGFloat = 1
+    @State private var offset: CGSize = .zero
+
+    private let targetScale: CGFloat
+    private let targetOffset: CGSize
+    private let duration: Double
+
+    init(url: URL?, width: CGFloat, height: CGFloat) {
+        self.url = url
+        self.width = width
+        self.height = height
+
+        // one-time random Ken-Burns parameters
+        let maxZoom: CGFloat = 0.3
+        let s = 1 + .random(in: 0...maxZoom)
+        
+        let overshootW = width * s - width
+        let overshootH = height * s - height
+        let maxX = overshootW / 2
+        let maxY = overshootH / 2
+
+        self.targetScale = s
+        self.targetOffset = CGSize(
+            width: .random(in: -maxX...maxX),
+            height: .random(in: -maxY...maxY)
+        )
+        self.duration = Double.random(in: 5...10)
+    }
+
+    var body: some View {
+        CachedAsyncImage(url: url) { img in
+            img
+                .resizable()
+                .scaledToFill()
+                .frame(width: width, height: height)
+                .clipped()
+                .scaleEffect(scale)
+                .offset(offset)
+                .onAppear {
+                    withAnimation(
+                        .easeInOut(duration: duration)
+                        .repeatForever(autoreverses: true)
+                    ) {
+                        scale = targetScale
+                        offset = targetOffset
+                    }
+                }
+        } placeholder: {
+            Color.gray.opacity(0.3)
+                .frame(width: width, height: height)
         }
-        loading = false
     }
 }
+
 
 // MARK: – Grid Cell with Ken Burns Effect
 
@@ -77,56 +153,30 @@ struct TemplateCell: View {
     let template: Template
     let action: () -> Void
 
-    let cellWidth: CGFloat = (UIScreen.main.bounds.width - 48) / 2
-    let cellHeight: CGFloat = (UIScreen.main.bounds.width - 48) / 2 * 1.614
+    private let cellWidth: CGFloat
+    private let cellHeight: CGFloat
 
-    @State var animatedScale: CGFloat = 1.0
-    @State var animatedOffset: CGSize = .zero
+    init(template: Template, action: @escaping () -> Void) {
+        self.template = template
+        self.action = action
+
+        let w = (UIScreen.main.bounds.width - 48) / 2
+        self.cellWidth = w
+        self.cellHeight = w * 1.614
+    }
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            CachedAsyncImage(url: template.thumbnailUrl) { img in
-                img
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: cellWidth, height: cellHeight)
-                    .clipped()
-                // apply Ken Burns effect
-                    .scaleEffect(animatedScale)
-                    .offset(animatedOffset)
-                    .onAppear {
-                        // random target values
-                        let maxZoom: CGFloat = 0.3
-                        let targetScale = 1 + .random(in: 0...maxZoom)
-                        // After scaling, the image is larger: compute overshoot
-                        let overshootWidth = cellWidth * targetScale - cellWidth
-                        let overshootHeight = cellHeight * targetScale - cellHeight
-                        // Half overshoot is max safe offset
-                        let maxXOffset = overshootWidth / 2
-                        let maxYOffset = overshootHeight / 2
-                        // Random offset within safe range
-                        let targetOffset = CGSize(
-                            width: .random(in: -maxXOffset...maxXOffset),
-                            height: .random(in: -maxYOffset...maxYOffset)
-                        )
-                        let duration = Double.random(in: 5...10)
-                        withAnimation(
-                            Animation.easeInOut(duration: duration)
-                                .repeatForever(autoreverses: true)
-                        ) {
-                            animatedScale = targetScale
-                            animatedOffset = targetOffset
-                        }
-                    }
-            } placeholder: {
-                Color.gray.opacity(0.3)
-                    .frame(width: cellWidth, height: cellHeight)
-            }
+            AnimatedImageView(
+                url: template.thumbnailUrl,
+                width: cellWidth,
+                height: cellHeight
+            )
 
             LinearGradient(
                 gradient: Gradient(stops: [
-                    .init(color: .white.opacity(0.7), location: 0),
-                    .init(color: .white.opacity(0),   location: 0.8)
+                    .init(color: .black.opacity(0.7), location: 0),
+                    .init(color: .black.opacity(0),   location: 0.8)
                 ]),
                 startPoint: .bottom,
                 endPoint: .top
@@ -148,6 +198,8 @@ struct TemplateCell: View {
     }
 }
 
+
+
 // MARK: – Prompt & Generation
 
 struct TemplatePromptView: View {
@@ -163,16 +215,11 @@ struct TemplatePromptView: View {
             VStack(spacing: 20) {
                 // Template preview
                 ZStack(alignment: .bottom) {
-                    CachedAsyncImage(url: template.thumbnailUrl) { img in
-                        img
-                            .resizable()
-                            .scaledToFill()
-                            .frame(height: 200)
-                            .clipped()
-                    } placeholder: {
-                        Color.gray.opacity(0.3)
-                            .frame(height: 200)
-                    }
+                    AnimatedImageView(
+                        url: template.thumbnailUrl,
+                        width: UIScreen.main.bounds.width - 32,
+                        height: 200
+                    )
 
                     LinearGradient(
                         gradient: Gradient(stops: [
@@ -268,62 +315,6 @@ struct TemplatePromptView: View {
             dismiss()
         }
         isProcessing = false
-    }
-}
-
-struct CachedAsyncImage<Content: View, Placeholder: View>: View {
-    let url: URL?
-    let content: (Image) -> Content
-    let placeholder: () -> Placeholder
-
-    @State private var image: UIImage?
-    @State private var isLoading = false
-
-    init(
-        url: URL?,
-        @ViewBuilder content: @escaping (Image) -> Content,
-        @ViewBuilder placeholder: @escaping () -> Placeholder
-    ) {
-        self.url = url
-        self.content = content
-        self.placeholder = placeholder
-    }
-
-    var body: some View {
-        Group {
-            if let uiImage = image {
-                content(Image(uiImage: uiImage))
-            } else {
-                placeholder()
-                    .onAppear { load() }
-            }
-        }
-    }
-
-    private func load() {
-        guard !isLoading, let url else { return }
-        isLoading = true
-
-        Task {
-            // Try disk cache first
-            if let data = await DiskCache.shared.get(url: url),
-               let img = UIImage(data: data) {
-                await MainActor.run { image = img }
-//                print("cache hit")
-                return
-            }
-
-            // Download if not cached
-            do {
-                let (data, _) = try await URLSession.shared.data(from: url)
-                if let img = UIImage(data: data) {
-                    await DiskCache.shared.set(url: url, data: data)
-                    await MainActor.run { image = img }
-                }
-            } catch {
-                // Ignore error, show placeholder
-            }
-        }
     }
 }
 
